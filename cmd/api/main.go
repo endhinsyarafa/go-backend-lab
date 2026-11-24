@@ -28,7 +28,6 @@ func main() {
 		log.Fatal("Gagal ping DB:", err)
 	}
 
-	// Dependency Injection
 	authHandler := &handler.AuthHandler{
 		DB:        db,
 		JWTSecret: cfg.JWTSecret,
@@ -49,25 +48,46 @@ func main() {
 		c.JSON(http.StatusOK, gin.H{"status": "ok"})
 	})
 
+	router.StaticFile("/swagger.yaml", "./swagger.yaml")
+
+	router.GET("/swagger", func(c *gin.Context) {
+		c.Redirect(http.StatusMovedPermanently, "/swagger/index.html")
+	})
+
+	router.GET("/swagger/index.html", func(c *gin.Context) {
+		html := `<!DOCTYPE html>
+			<html lang="en">
+			<head>
+			<meta charset="UTF-8">
+			<title>Meeting Room Booking API - Swagger UI</title>
+			<link rel="stylesheet" href="https://unpkg.com/swagger-ui-dist@5/swagger-ui.css" />
+			</head>
+			<body>
+			<div id="swagger-ui"></div>
+			<script src="https://unpkg.com/swagger-ui-dist@5/swagger-ui-bundle.js"></script>
+			<script>
+				window.onload = () => {
+				SwaggerUIBundle({
+					url: '/swagger.yaml',
+					dom_id: '#swagger-ui',
+				});
+				};
+			</script>
+			</body>
+			</html>`
+		c.Data(http.StatusOK, "text/html; charset=utf-8", []byte(html))
+	})
+
 	v1 := router.Group("/api/v1")
 	{
-		// Public
 		v1.POST("/auth/login", authHandler.Login)
 
-		// Protected (ADMIN & USER)
 		protected := v1.Group("")
 		protected.Use(middleware.AuthMiddleware(cfg.JWTSecret))
 		{
-			// 1. Room Management (khusus ADMIN)
 			protected.POST("/rooms", middleware.RequireRole("ADMIN"), roomHandler.CreateRoom)
-
-			// 2. Room Availability
 			protected.GET("/rooms/available", roomHandler.GetAvailableRooms)
-
-			// 3. Booking Management
 			protected.POST("/bookings", bookingHandler.CreateBooking)
-
-			// 4. Booking Cancellation
 			protected.PATCH("/bookings/:id/cancel", bookingHandler.CancelBooking)
 		}
 	}

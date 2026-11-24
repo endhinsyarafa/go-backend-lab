@@ -11,6 +11,7 @@ FROM alpine:3.20
 WORKDIR /app
 RUN apk add --no-cache tzdata
 COPY --from=builder /app/server /app/server
+COPY --from=builder /app/swagger.yaml /app/swagger.yaml
 
 EXPOSE 8080
 CMD ["/app/server"]
