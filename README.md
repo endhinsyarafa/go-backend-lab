@@ -1,32 +1,94 @@
 # Meeting Room Booking API
 
-REST API untuk manajemen ruangan meeting dan pemesanan jadwal berbasis Go (Gin) dan PostgreSQL.
+REST API untuk manajemen ruangan meeting dan pemesanan jadwal berbasis **Go (Gin)** dan **PostgreSQL** dengan proteksi *double booking* menggunakan transaksi database dan *row-level locking* (`SELECT ... FOR UPDATE`).
 
-## Menjalankan Aplikasi dengan Docker
-Pastikan Docker Desktop sudah aktif, lalu jalankan:
+## Fitur Utama & Tech Stack
+* **Bahasa & Framework:** Go, Gin Web Framework
+* **Database:** PostgreSQL 16 (`lib/pq`)
+* **Autentikasi & Otorisasi:** JWT (Bearer Token), Bcrypt password hashing, Role-Based Access Control (`ADMIN` & `USER`)
+* **Concurrency Control:** Database Transaction + Row-Level Locking untuk mencegah bentrok jadwal pada request paralel
+* **Dokumentasi API:** OpenAPI 3.0 (`swagger.yaml`) & Swagger UI terintegrasi
+* **Containerization:** Docker & Docker Compose
+
+## Struktur Proyek
+```text
+.
+├── cmd/api/main.go               # Entry point, dependency injection, & routing
+├── internal/
+│   ├── config/                   # Loader environment variable & DSN database
+│   ├── handler/                  # HTTP handler & integration/concurrency test
+│   ├── middleware/               # Verifikasi JWT & validasi role (ADMIN/USER)
+│   ├── model/                    # Struct domain & payload request/response
+│   ├── repository/               # Query SQL PostgreSQL & row-level locking
+│   └── service/                  # Logika bisnis & validasi aturan booking
+├── queries.sql                   # Query SQL analitik (rekap jam & ketersediaan)
+├── schema.sql                    # DDL tabel, index, & seeder 3 akun awal
+├── swagger.yaml                  # Spesifikasi OpenAPI 3.0
+├── Dockerfile                    # Multi-stage build image Go
+└── docker-compose.yml            # Orkestrasi container API & PostgreSQL
+```
+
+---
+
+## 1. Menjalankan Aplikasi dengan Docker
+Pastikan Docker Desktop sudah aktif dan port `8080` serta `5432` tidak sedang digunakan, lalu jalankan:
 
 ```bash
 docker-compose up -d --build
 ```
 
-Aplikasi akan berjalan di `http://localhost:8080` dan database PostgreSQL akan otomatis terinisialisasi menggunakan `schema.sql` beserta 3 akun awal (`admin@test.com`, `user1@test.com`, `user2@test.com` dengan password `password123`).
+Aplikasi akan berjalan di `http://localhost:8080` dan database PostgreSQL akan otomatis terinisialisasi menggunakan `schema.sql`.
 
-Untuk menghentikan dan menghapus volume database:
+### Akun Seeder Awal
+| Role | Email | Password |
+| :--- | :--- | :--- |
+| `ADMIN` | `admin@test.com` | `password123` |
+| `USER` | `user1@test.com` | `password123` |
+| `USER` | `user2@test.com` | `password123` |
 
+Untuk menghentikan container dan menghapus volume database:
 ```bash
 docker-compose down -v
 ```
 
-## Menjalankan Automated Test
-Pastikan database aktif (baik lokal maupun Docker) dan konfigurasi environment sudah sesuai, lalu jalankan:
+---
 
+## 2. Dokumentasi Interaktif (Swagger UI)
+Saat aplikasi berjalan, dokumentasi interaktif OpenAPI 3.0 dapat diakses langsung melalui browser:
+* **Swagger UI:** `http://localhost:8080/swagger/index.html`
+* **Spesifikasi YAML:** `http://localhost:8080/swagger.yaml`
+
+> **Tips Pengujian di Swagger UI:** Lakukan login di endpoint `/api/v1/auth/login`, salin nilai `token`, lalu klik tombol **Authorize** dan masukkan **hanya string token-nya saja** (tanpa awalan `Bearer `).
+
+---
+
+## 3. Menjalankan Automated Test
+Proyek ini dilengkapi dengan **unit test** (`config`, `middleware`, `service`) serta **integration & concurrency test** (`handler` dengan simulasi 10 request paralel pada slot waktu yang sama).
+
+Pastikan database aktif, lalu jalankan:
 ```bash
-go test -v ./...
+go test -v -count=1 ./...
 ```
+*(Flag `-count=1` memastikan seluruh test dieksekusi ulang tanpa menggunakan cache).*
 
-## Dokumentasi Endpoint
+---
+
+## 4. Query SQL Analitik (`queries.sql`)
+File `queries.sql` di root repositori berisi 2 query siap eksekusi di PostgreSQL:
+1. **Rekap jam penggunaan per ruangan** untuk bulan berjalan (hanya menghitung status `CONFIRMED`).
+2. **Pencarian ruangan tersedia** pada rentang waktu tertentu (ruangan aktif tanpa irisan jadwal `CONFIRMED`).
+
+---
+
+## 5. Dokumentasi Endpoint (`curl`)
 * **Autentikasi:** Semua endpoint terproteksi memerlukan header `Authorization: Bearer <jwt_token>`.
 * **Format Waktu:** Semua parameter query dan field waktu menggunakan format **ISO-8601 UTC** (contoh: `2026-12-01T10:00:00Z`).
+
+### Health Check (`GET /health`)
+```bash
+curl http://localhost:8080/health
+```
+* **Sukses (`200 OK`):** `{"status":"ok"}`
 
 ### 1. Login (`POST /api/v1/auth/login`)
 ```bash
